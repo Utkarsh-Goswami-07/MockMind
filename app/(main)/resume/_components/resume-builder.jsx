@@ -14,8 +14,6 @@ import EntryForm from './entry-form';
 import { entriesToMarkdown } from '@/app/lib/helper';
 import MDEditor from '@uiw/react-md-editor';
 import { useUser } from '@clerk/nextjs';
-import { userAgent } from 'next/server';
-import html2pdf from "html2pdf.js";
 import { toast } from 'sonner';
 
 const ResumeBuilder = ({ initialContent }) => {
@@ -70,16 +68,13 @@ const ResumeBuilder = ({ initialContent }) => {
         const parts = [];
         if (contactInfo.email) parts.push(`📧 ${contactInfo.email}`);
         if (contactInfo.mobile) parts.push(`📱 ${contactInfo.mobile}`);
-        if (contactInfo.linkedin)
-            parts.push(`💼 ${contactInfo.linkedin}`);
-        if (contactInfo.twitter) parts.push(`🐦 [Twitter] (${contactInfo.twitter})`);
+        if (contactInfo.linkedin) parts.push(`💼 ${contactInfo.linkedin}`);
+        if (contactInfo.twitter) parts.push(`🐦 [Twitter](${contactInfo.twitter})`);
 
         return parts.length > 0
-            ? `## <div align='center'>${userAgent.fullName}</div>
+            ? `## <div align='center'>${user?.fullName || ""}</div>
         \n\n<div align='center'>\n\n${parts.join(" | ")}\n\n</div>`
             : "";
-
-
     }
 
     const getCombinedContent = () => {
@@ -122,24 +117,58 @@ const ResumeBuilder = ({ initialContent }) => {
 
     const generatePDF = async () => {
         setIsGenerating(true);
-
         try {
-            const element = document.getElementById('resume-pdf');
+            const MarkdownIt = (await import("markdown-it")).default;
+            const md = new MarkdownIt({ html: true });
+            const htmlContent = md.render(previewContent || "");
 
-            const opt = {
-                margin: [15, 15],
-                filename: "resume.pdf",
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2 },
-                jsPDF: { unit: "mm", format: "a4", orientation: 'portrait' }
-            }
-            await html2pdf().set(opt).from(element).save();
+            const printWindow = window.open("", "_blank");
+            printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <title>${user?.fullName || "resume"}</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            font-size: 14px;
+                            line-height: 1.6;
+                            color: black;
+                            background: white;
+                            padding: 40px;
+                            max-width: 800px;
+                            margin: 0 auto;
+                        }
+                        h1, h2, h3 { color: black; margin-top: 20px; }
+                        ul { padding-left: 20px; }
+                        a { color: black; }
+                        p { margin: 8px 0; }
+                        @media print {
+                            body { padding: 20px; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    ${htmlContent}
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            window.onafterprint = function() {
+                                window.close();
+                            }
+                        }
+                    </script>
+                </body>
+            </html>
+        `);
+            printWindow.document.close();
         } catch (error) {
-            console.error("Unexpected error occured:", error);
+            console.error("PDF generation error:", error);
+            toast.error("Failed to generate PDF");
         } finally {
             setIsGenerating(false);
         }
-    }
+    };
 
     return (
         <div className='space-y-4'>
@@ -192,9 +221,7 @@ const ResumeBuilder = ({ initialContent }) => {
                                         {...register("contactInfo.email")}
                                         type={'email'}
                                         placeholder="your@email.com"
-                                        errors={errors.contactInfo?.email}
                                     />
-
                                     {errors.contactInfo?.email && (
                                         <p className='text-sm text-red-500'>
                                             {errors.contactInfo.email.message}
@@ -208,9 +235,7 @@ const ResumeBuilder = ({ initialContent }) => {
                                         {...register("contactInfo.mobile")}
                                         type={'tel'}
                                         placeholder="+1 111 222 3333"
-
                                     />
-
                                     {errors.contactInfo?.mobile && (
                                         <p className='text-sm text-red-500'>
                                             {errors.contactInfo.mobile.message}
@@ -224,9 +249,7 @@ const ResumeBuilder = ({ initialContent }) => {
                                         {...register("contactInfo.linkedin")}
                                         type={'url'}
                                         placeholder="https://linkedin.com/in/your-profile"
-
                                     />
-
                                     {errors.contactInfo?.linkedin && (
                                         <p className='text-sm text-red-500'>
                                             {errors.contactInfo.linkedin.message}
@@ -239,10 +262,8 @@ const ResumeBuilder = ({ initialContent }) => {
                                     <Input
                                         {...register("contactInfo.twitter")}
                                         type={'url'}
-                                        placeholder="https:/x.com/your_username"
-                                        errors={errors.contactInfo?.email}
+                                        placeholder="https://x.com/your_username"
                                     />
-
                                     {errors.contactInfo?.twitter && (
                                         <p className='text-sm text-red-500'>
                                             {errors.contactInfo.twitter.message}
@@ -250,7 +271,6 @@ const ResumeBuilder = ({ initialContent }) => {
                                     )}
                                 </div>
                             </div>
-
                         </div>
 
                         <div className='space-y-4'>
@@ -282,7 +302,7 @@ const ResumeBuilder = ({ initialContent }) => {
                                         {...field}
                                         className='h-32 resize-none'
                                         placeholder='Let us know how skilled you are...'
-                                        error={errors.summary}
+                                        error={errors.skills}
                                     />
                                 )}
                             />
@@ -368,8 +388,8 @@ const ResumeBuilder = ({ initialContent }) => {
                         <div className='flex p-3 gap-2 items-center border-2 border-lime-600 text-lime-600 rounded mb-2'>
                             <AlertTriangle className='h-5 w-5' />
                             <span className='text-sm'>
-                You will lose edited markdown if you update the form data.
-              </span>
+                                You will lose edited markdown if you update the form data.
+                            </span>
                         </div>
                     )}
                     <div className='border rounded-lg'>
@@ -379,18 +399,6 @@ const ResumeBuilder = ({ initialContent }) => {
                             height={800}
                             preview={resumeMode}
                         />
-                    </div>
-
-                    <div className='hidden'>
-                        <div id='resume-pdf'>
-                            <MDEditor.Markdown
-                                source={previewContent}
-                                style={{
-                                    background: "white",
-                                    color: "black"
-                                }}
-                            />
-                        </div>
                     </div>
                 </TabsContent>
             </Tabs>
